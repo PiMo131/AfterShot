@@ -49,6 +49,7 @@
       align-items: center;
       justify-content: space-between;
       pointer-events: none;
+      z-index: 40; /* ensure above video */
     }
     .chipRow { display:flex; gap:8px; flex-wrap: wrap; align-items:center; pointer-events: auto; }
     .chip {
@@ -86,12 +87,15 @@
       gap:8px;
     }
     .menuBtn:active { transform: translateY(1px); }
+
+    /* MENU PANEL: fixed + high z-index so it never goes behind bottom buttons */
     .menuPanel {
-      position: absolute;
-      right: 0;
-      top: 46px;
+      position: fixed; /* changed from absolute */
+      top: calc(env(safe-area-inset-top) + 56px);
+      right: 12px;
       width: min(420px, calc(100vw - 24px));
-      max-height: min(72vh, 620px);
+      /* leave space for bottom overlay controls: safe area + ~110px */
+      max-height: calc(100vh - (env(safe-area-inset-top) + 56px) - (env(safe-area-inset-bottom) + 120px));
       overflow: auto;
       background: var(--panel2);
       border: 1px solid var(--border);
@@ -100,8 +104,38 @@
       backdrop-filter: blur(10px);
       padding: 10px;
       display: none;
+      z-index: 80; /* above everything including bottom bar */
     }
     .menuPanel.open { display: block; }
+
+    /* 3-step menu tabs */
+    .stepTabs{
+      display:flex;
+      gap:8px;
+      margin: 2px 0 10px;
+    }
+    .stepTab{
+      flex:1;
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      font-size: 13px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      user-select:none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .stepTab.active{
+      background: rgba(255,255,255,0.14);
+      border-color: rgba(255,255,255,0.25);
+    }
+    .stepPage{ display:none; }
+    .stepPage.active{ display:block; }
+
     .sectionTitle {
       margin: 6px 0 8px;
       font-size: 12px;
@@ -149,6 +183,7 @@
       bottom: env(safe-area-inset-bottom);
       padding: 12px;
       pointer-events: none;
+      z-index: 20; /* explicitly below menu */
     }
     .controls {
       pointer-events: auto;
@@ -192,6 +227,7 @@
       display:flex;
       justify-content: center;
       pointer-events:none;
+      z-index: 10;
     }
     .hint .chip { max-width: 92vw; }
 
@@ -236,93 +272,122 @@
 
     <div class="menu">
       <button class="menuBtn" id="menuBtn">Menu ▾</button>
+
+      <!-- 3-step menu -->
       <div class="menuPanel" id="menuPanel">
-        <div class="sectionTitle">Settings</div>
 
-        <div class="grid2">
-          <div class="field">
-            <label>Pre-roll X (seconds)</label>
-            <input id="preSec" type="number" min="1" max="30" value="10"/>
+        <div class="stepTabs">
+          <div class="stepTab active" id="tabVideo">Video</div>
+          <div class="stepTab" id="tabDetect">Detection</div>
+          <div class="stepTab" id="tabDownloads">Downloads</div>
+        </div>
+
+        <!-- PAGE 1: VIDEO SETTINGS -->
+        <div class="stepPage active" id="pageVideo">
+          <div class="sectionTitle">Video settings</div>
+
+          <div class="grid2">
+            <div class="field">
+              <label>Pre-roll X (seconds)</label>
+              <input id="preSec" type="number" min="1" max="30" value="10"/>
+            </div>
+            <div class="field">
+              <label>Post-roll Y (seconds)</label>
+              <input id="postSec" type="number" min="1" max="30" value="5"/>
+            </div>
           </div>
+
           <div class="field">
-            <label>Post-roll Y (seconds)</label>
-            <input id="postSec" type="number" min="1" max="30" value="5"/>
+            <label>Chunk size (ms)</label>
+            <input id="chunkMs" type="number" min="100" max="2000" step="50" value="250"/>
+          </div>
+
+          <div class="sectionTitle">Muzzle-down standby (calibrated)</div>
+
+          <div class="grid2">
+            <div class="field">
+              <label>Down threshold Δ (degrees)</label>
+              <input id="downDeg" type="number" min="10" max="85" value="50"/>
+            </div>
+            <div class="field">
+              <label>Down duration (ms)</label>
+              <input id="downMs" type="number" min="200" max="5000" step="100" value="1500"/>
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label>Resume threshold Δ (degrees)</label>
+              <input id="upDeg" type="number" min="0" max="80" value="35"/>
+            </div>
+            <div class="field">
+              <label>Resume duration (ms)</label>
+              <input id="upMs" type="number" min="100" max="5000" step="100" value="500"/>
+            </div>
+          </div>
+
+          <div class="toggle">
+            <input id="invertPitch" type="checkbox" />
+            <span>Invert pitch (if Δ goes the wrong way)</span>
+          </div>
+
+          <div class="toggle">
+            <input id="enableStandby" type="checkbox" checked />
+            <span>Enable standby</span>
+          </div>
+
+          <div class="sectionTitle">Display</div>
+
+          <div class="toggle">
+            <input id="autoFullscreen" type="checkbox" checked />
+            <span>Auto fullscreen on Start</span>
+          </div>
+
+          <div class="toggle">
+            <input id="autoLandscape" type="checkbox" checked />
+            <span>Try lock landscape (fullscreen only)</span>
           </div>
         </div>
 
-        <div class="field">
-          <label>Chunk size (ms)</label>
-          <input id="chunkMs" type="number" min="100" max="2000" step="50" value="250"/>
-        </div>
+        <!-- PAGE 2: SHOT DETECTION -->
+        <div class="stepPage" id="pageDetect">
+          <div class="sectionTitle">Shot detection (audio)</div>
 
-        <div class="sectionTitle">Shot detection (audio)</div>
-
-        <div class="field">
-          <label>Peak threshold</label>
-          <input id="thrPeak" type="range" min="0.05" max="1.0" step="0.01" value="0.35"/>
-        </div>
-        <div class="field">
-          <label>Impulse score threshold (peak/rms)</label>
-          <input id="thrScore" type="range" min="1" max="30" step="0.5" value="8"/>
-        </div>
-
-        <div class="grid2">
           <div class="field">
-            <label>Cooldown (ms)</label>
-            <input id="cooldownMs" type="number" min="100" max="5000" step="50" value="600"/>
+            <label>Peak threshold</label>
+            <input id="thrPeak" type="range" min="0.05" max="1.0" step="0.01" value="0.35"/>
           </div>
-          <div class="field">
-            <label>Min trigger gap (ms)</label>
-            <input id="minGapMs" type="number" min="0" max="5000" step="50" value="250"/>
-          </div>
-        </div>
 
-        <div class="sectionTitle">Muzzle-down standby (calibrated)</div>
-
-        <div class="grid2">
           <div class="field">
-            <label>Down threshold Δ (degrees)</label>
-            <input id="downDeg" type="number" min="10" max="85" value="50"/>
+            <label>Impulse score threshold (peak/rms)</label>
+            <input id="thrScore" type="range" min="1" max="30" step="0.5" value="8"/>
           </div>
-          <div class="field">
-            <label>Down duration (ms)</label>
-            <input id="downMs" type="number" min="200" max="5000" step="100" value="1500"/>
+
+          <div class="grid2">
+            <div class="field">
+              <label>Cooldown (ms)</label>
+              <input id="cooldownMs" type="number" min="100" max="5000" step="50" value="600"/>
+            </div>
+            <div class="field">
+              <label>Min trigger gap (ms)</label>
+              <input id="minGapMs" type="number" min="0" max="5000" step="50" value="250"/>
+            </div>
+          </div>
+
+          <div style="color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 6px;">
+            Tip: If you get false triggers, increase <b>Peak</b> and/or <b>Score</b>, and slightly increase <b>Cooldown</b>.
           </div>
         </div>
 
-        <div class="grid2">
-          <div class="field">
-            <label>Resume threshold Δ (degrees)</label>
-            <input id="upDeg" type="number" min="0" max="80" value="35"/>
-          </div>
-          <div class="field">
-            <label>Resume duration (ms)</label>
-            <input id="upMs" type="number" min="100" max="5000" step="100" value="500"/>
+        <!-- PAGE 3: DOWNLOADS -->
+        <div class="stepPage" id="pageDownloads">
+          <div class="sectionTitle">Downloads</div>
+          <div class="downloads" id="downloads"></div>
+          <div style="color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 6px;">
+            Clips are saved as <b>.webm</b>.
           </div>
         </div>
 
-        <div class="toggle">
-          <input id="invertPitch" type="checkbox" />
-          <span>Invert pitch (if Δ goes the wrong way)</span>
-        </div>
-
-        <div class="toggle">
-          <input id="enableStandby" type="checkbox" checked />
-          <span>Enable standby</span>
-        </div>
-
-        <div class="toggle">
-          <input id="autoFullscreen" type="checkbox" checked />
-          <span>Auto fullscreen on Start</span>
-        </div>
-
-        <div class="toggle">
-          <input id="autoLandscape" type="checkbox" checked />
-          <span>Try lock landscape (fullscreen only)</span>
-        </div>
-
-        <div class="sectionTitle">Downloads</div>
-        <div class="downloads" id="downloads"></div>
       </div>
     </div>
   </div>
@@ -363,6 +428,28 @@
 
   const menuBtn = $("menuBtn");
   const menuPanel = $("menuPanel");
+
+  // 3-step tabs/pages
+  const tabVideo = $("tabVideo");
+  const tabDetect = $("tabDetect");
+  const tabDownloads = $("tabDownloads");
+  const pageVideo = $("pageVideo");
+  const pageDetect = $("pageDetect");
+  const pageDownloads = $("pageDownloads");
+
+  function setMenuStep(step) {
+    tabVideo.classList.toggle("active", step === "video");
+    tabDetect.classList.toggle("active", step === "detect");
+    tabDownloads.classList.toggle("active", step === "downloads");
+
+    pageVideo.classList.toggle("active", step === "video");
+    pageDetect.classList.toggle("active", step === "detect");
+    pageDownloads.classList.toggle("active", step === "downloads");
+  }
+
+  tabVideo.addEventListener("click", () => setMenuStep("video"));
+  tabDetect.addEventListener("click", () => setMenuStep("detect"));
+  tabDownloads.addEventListener("click", () => setMenuStep("downloads"));
 
   // Buttons
   const btnStart = $("btnStart");
@@ -503,14 +590,12 @@
         await screen.orientation.lock("landscape");
       }
     } catch (e) {
-      // Common: NotAllowedError unless fullscreen; or not supported
       console.warn("Orientation lock failed:", e);
     }
   }
 
   function updateRotateOverlay() {
     const isLandscape = window.matchMedia("(orientation: landscape)").matches;
-    // Only show overlay when not started (or idle). While recording, don’t block.
     rotateOverlay.classList.toggle("show", !isLandscape && state === "IDLE");
   }
   window.addEventListener("resize", updateRotateOverlay);
@@ -550,7 +635,6 @@
 
       analyser.getFloatTimeDomainData(audioData);
 
-      // peak + RMS + score
       let peak = 0, sumSq = 0;
       for (let i=0;i<audioData.length;i++){
         const v = audioData[i];
@@ -603,6 +687,10 @@
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = `shotcam_${ts}_${reason}_pre${preSecEl.value}s_post${postSecEl.value}s.webm`;
     appendDownload(out, filename);
+
+    // Optional UX: jump to Downloads tab when a clip is created
+    setMenuStep("downloads");
+    toggleMenu(true);
 
     eventChunks = null;
 
@@ -700,7 +788,6 @@
       if (typeof DeviceOrientationEvent !== "undefined" &&
           typeof DeviceOrientationEvent.requestPermission === "function") {
         const res = await DeviceOrientationEvent.requestPermission();
-        // If not granted, we still run, but standby won’t work.
         if (res !== "granted") console.warn("DeviceOrientation permission not granted.");
       }
     } catch (e) {
@@ -763,21 +850,16 @@
 
   // ---------- buttons ----------
   btnStart.addEventListener("click", async () => {
-    // 1) Permissions for orientation (iOS)
     await requestOrientationPermissionIfNeeded();
 
-    // 2) Fullscreen + landscape lock (best effort)
     if (autoFullscreenEl.checked) await goFullscreen();
     if (autoLandscapeEl.checked) await lockLandscape();
 
-    // 3) Wake lock
     await requestWakeLock();
-
-    // 4) Start armed
     await startArmed();
 
-    // Hide menu if open
     toggleMenu(false);
+    setMenuStep("video");
   });
 
   btnStop.addEventListener("click", async () => {
@@ -793,7 +875,6 @@
     if (b == null) { alert("No orientation data yet. Move the phone a bit (and allow motion/orientation if asked)."); return; }
     refBeta = b;
     hasCal = true;
-    // Quick feedback
     const d = deltaBeta();
     deltaEl.textContent = (d == null) ? "–" : d.toFixed(1);
     toggleMenu(false);
