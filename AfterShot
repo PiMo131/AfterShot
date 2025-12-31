@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ShotCam Web Prototype (Wake Lock + Calibrated Muzzle Down)</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 12px; }
+    video { width: 100%; max-height: 55vh; background: #000; border-radius: 12px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .card { padding: 10px; border: 1px solid #ddd; border-radius: 12px; flex: 1 1 260px; }
+    label { display: block; margin: 8px 0 4px; }
+    input[type="number"], input[type="range"] { width: 100%; }
+    button { padding: 10px 12px; border-radius: 10px; border: 1px solid #ccc; background: #f7f7f7; }
+    button.primary { background: #111; color: #fff; border-color: #111; }
+    .status { font-size: 14px; line-height: 1.4; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #ccc; margin-left: 6px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .warn { color: #b45309; }
+    .ok { color: #15803d; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .toggle { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h2>ShotCam – web prototype</h2>
+
+  <video id="preview" playsinline muted></video>
+
+  <div class="row">
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnStop">Stop</button>
+        <button id="btnTest">Test Trigger</button>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <button id="btnCal" title="Zet nu de loop/telefoon in 'ready' positie en druk hierop.">Calibrate Ready</button>
+        <button id="btnCalReset" title="Verwijder calibratie (ref=0)">Reset Cal</button>
+      </div>
+
+      <div class="status" style="margin-top:10px">
+        Mode: <span id="mode" class="badge">IDLE</span>
+        <span id="wl" class="badge">WakeLock: OFF</span><br/>
+        Buffer: <span id="bufInfo" class="mono">0</span><br/>
+        Pitch beta: <span id="beta" class="mono">–</span>° |
+        Ref: <span id="ref" class="mono">0.0</span>° |
+        Δ: <span id="delta" class="mono">–</span>°<br/>
+        Timer: <span id="timer" class="mono">0</span> ms<br/>
+        Audio: peak=<span id="peak" class="mono">0</span>,
+        rms=<span id="rms" class="mono">0</span>,
+        score=<span id="score" class="mono">0</span>
+      </div>
+
+      <p class="status warn" style="margin-top:10px">
+        Prototype: pagina blijft open + scherm aan. Wake Lock werkt vooral in Android Chrome.
+        iOS/Safari kan beperkingen hebben voor MediaRecorder en/or device orientation.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Instellingen</h3>
+
+      <div class="grid2">
+        <div>
+          <label>Pre-roll X (seconden)</label>
+          <input id="preSec" type="number" min="1" max="30" value="10"/>
+        </div>
+        <div>
+          <label>Post-roll Y (seconden)</label>
+          <input id="postSec" type="number" min="1" max="30" value="5"/>
+        </div>
+      </div>
+
+      <label>Chunk size (ms) – opname segmenten</label>
+      <input id="chunkMs" type="number" min="100" max="2000" step="50" value="250"/>
+
+      <h4 style="margin:12px 0 6px;">Schotdetectie (audio)</h4>
+      <label>Shot threshold (peak)</label>
+      <input id="thrPeak" type="range" min="0.05" max="1.0" step="0.01" value="0.35"/>
+      <label>Impulse score threshold (peak/rms)</label>
+      <input id="thrScore" type="range" min="1" max="30" step="0.5" value="8"/>
+      <div class="grid2">
+        <div>
+          <label>Cooldown (ms)</label>
+          <input id="cooldownMs" type="number" min="100" max="5000" step="50" value="600"/>
+        </div>
+        <div>
+          <label>Min trigger gap (ms)</label>
+          <input id="minGapMs" type="number" min="0" max="5000" step="50" value="250"/>
+        </div>
+      </div>
+
+      <h4 style="margin:12px 0 6px;">Muzzle-down standby (op basis van Δ)</h4>
+      <div class="grid2">
+        <div>
+          <label>Down threshold Δ (°)</label>
+          <input id="downDeg" type="number" min="10" max="85" value="50"/>
+        </div>
+        <div>
+          <label>Down duration (ms)</label>
+          <input id="downMs" type="number" min="200" max="5000" step="100" value="1500"/>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label>Resume threshold Δ (°)</label>
+          <input id="upDeg" type="number" min="0" max="80" value="35"/>
+        </div>
+        <div>
+          <label>Resume duration (ms)</label>
+          <input id="upMs" type="number" min="100" max="5000" step="100" value="500"/>
+        </div>
+      </div>
+
+      <div class="toggle">
+        <input id="invertPitch" type="checkbox" />
+        <label for="invertPitch" style="margin:0">Invert pitch (als Δ de verkeerde kant op gaat)</label>
+      </div>
+
+      <div class="toggle">
+        <input id="enableStandby" type="checkbox" checked />
+        <label for="enableStandby" style="margin:0">Standby inschakelen</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Downloads</h3>
+      <div id="downloads"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const preview = $("preview");
+  const modeEl = $("mode");
+  const wlEl = $("wl");
+  const bufInfoEl = $("bufInfo");
+  const peakEl = $("peak");
+  const rmsEl = $("rms");
+  const scoreEl = $("score");
+  const betaEl = $("beta");
+  const refEl = $("ref");
+  const deltaEl = $("delta");
+  const timerEl = $("timer");
+  const downloadsEl = $("downloads");
+
+  const btnStart = $("btnStart");
+  const btnStop = $("btnStop");
+  const btnTest = $("btnTest");
+  const btnCal = $("btnCal");
+  const btnCalReset = $("btnCalReset");
+
+  const preSecEl = $("preSec");
+  const postSecEl = $("postSec");
+  const chunkMsEl = $("chunkMs");
+  const thrPeakEl = $("thrPeak");
+  const thrScoreEl = $("thrScore");
+  const cooldownMsEl = $("cooldownMs");
+  const minGapMsEl = $("minGapMs");
+
+  const downDegEl = $("downDeg");
+  const downMsEl = $("downMs");
+  const upDegEl = $("upDeg");
+  const upMsEl = $("upMs");
+  const invertPitchEl = $("invertPitch");
+  const enableStandbyEl = $("enableStandby");
+
+  let stream = null;
+  let recorder = null;
+
+  let ring = [];
+  let ringDurMs = 0;
+
+  let state = "IDLE"; // IDLE | ARMED | RECORD_EVENT | STANDBY
+  let eventChunks = null;
+  let postTimer = null;
+
+  let audioCtx = null;
+  let analyser = null;
+  let audioData = null;
+  let lastTriggerTs = 0;
+  let lastPeakTs = 0;
+
+  let wakeLock = null;
+
+  // orientation
+  let lastBetaRaw = null;
+  let refBeta = 0;          // calibrated reference (effective beta)
+  let hasCal = false;
+  let downStart = null;
+  let upStart = null;
+
+  const nowPerf = () => performance.now();
+
+  function setMode(m) { state = m; modeEl.textContent = m; }
+
+  function updateBufInfo() {
+    const preMs = Number(preSecEl.value) * 1000;
+    bufInfoEl.textContent = `${ring.length} chunks, ~${Math.round(ringDurMs/100)/10}s (target ${Math.round(preMs/100)/10}s)`;
+  }
+
+  function appendDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.textContent = filename;
+    a.style.display = "block";
+    a.style.margin = "6px 0";
+    downloadsEl.prepend(a);
+  }
+
+  function bestMimeType() {
+    const candidates = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm"
+    ];
+    for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t;
+    return "";
+  }
+
+  // Wake Lock
+  async function requestWakeLock() {
+    try {
+      if (!("wakeLock" in navigator)) { wlEl.textContent = "WakeLock: N/A"; return; }
+      wakeLock = await navigator.wakeLock.request("screen");
+      wlEl.textContent = "WakeLock: ON";
+      wlEl.classList.add("ok");
+      wakeLock.addEventListener("release", () => {
+        wlEl.textContent = "WakeLock: OFF";
+        wlEl.classList.remove("ok");
+      });
+    } catch (e) {
+      wlEl.textContent = "WakeLock: FAIL";
+      wlEl.classList.remove("ok");
+      console.warn("WakeLock failed:", e);
+    }
+  }
+
+  async function releaseWakeLock() {
+    try { if (wakeLock) await wakeLock.release(); } catch {}
+    wakeLock = null;
+    wlEl.textContent = ("wakeLock" in navigator) ? "WakeLock: OFF" : "WakeLock: N/A";
+    wlEl.classList.remove("ok");
+  }
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "visible" && (state !== "IDLE")) {
+      await requestWakeLock();
+    }
+  });
+
+  // Ring buffer
+  function pushChunk(blob, durMs) {
+    ring.push({ blob, durMs });
+    ringDurMs += durMs;
+
+    const keepMs = Number(preSecEl.value) * 1000;
+    while (ringDurMs > keepMs && ring.length > 1) {
+      const old = ring.shift();
+      ringDurMs -= old.durMs;
+    }
+    updateBufInfo();
+  }
+
+  function snapshotPreRoll() { return ring.map(x => x.blob); }
+
+  // Audio
+  function setupAudioDetection(audioTrackStream) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(audioTrackStream);
+
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.2;
+
+    src.connect(analyser);
+    audioData = new Float32Array(analyser.fftSize);
+
+    const loop = () => {
+      if (!analyser) return;
+
+      analyser.getFloatTimeDomainData(audioData);
+
+      let peak = 0, sumSq = 0;
+      for (let i = 0; i < audioData.length; i++) {
+        const a = audioData[i];
+        const vAbs = Math.abs(a);
+        if (vAbs > peak) peak = vAbs;
+        sumSq += a * a;
+      }
+      const rms = Math.sqrt(sumSq / audioData.length);
+      const score = peak / (rms + 1e-6);
+
+      peakEl.textContent = peak.toFixed(3);
+      rmsEl.textContent = rms.toFixed(3);
+      scoreEl.textContent = score.toFixed(2);
+
+      if (state === "ARMED") {
+        const t = nowPerf();
+        const thrPeak = Number(thrPeakEl.value);
+        const thrScore = Number(thrScoreEl.value);
+        const cooldown = Number(cooldownMsEl.value);
+        const minGap = Number(minGapMsEl.value);
+
+        const coolOk = (t - lastTriggerTs) > cooldown;
+        const gapOk = (t - lastPeakTs) > minGap;
+
+        if (peak > thrPeak * 0.6) lastPeakTs = t;
+
+        if (coolOk && gapOk && peak >= thrPeak && score >= thrScore) {
+          triggerEvent("audio");
+        }
+      }
+
+      requestAnimationFrame(loop);
+    };
+
+    loop();
+  }
+
+  // Event capture
+  function triggerEvent(reason) {
+    lastTriggerTs = nowPerf();
+    if (state !== "ARMED") return;
+
+    setMode("RECORD_EVENT");
+    eventChunks = [...snapshotPreRoll()];
+
+    clearTimeout(postTimer);
+    postTimer = setTimeout(() => finalizeEvent(reason), Number(postSecEl.value) * 1000);
+  }
+
+  function finalizeEvent(reason) {
+    if (!eventChunks) return;
+
+    const out = new Blob(eventChunks, { type: recorder?.mimeType || "video/webm" });
+    const dt = new Date();
+    const ts = dt.toISOString().replace(/[:.]/g, "-");
+    const filename = `shotcam_${ts}_${reason}_pre${preSecEl.value}s_post${postSecEl.value}s.webm`;
+    appendDownload(out, filename);
+
+    eventChunks = null;
+
+    // After event, if we're currently down -> standby else armed
+    if (enableStandbyEl.checked && isMuzzleDown()) goStandby();
+    else setMode("ARMED");
+  }
+
+  // Recorder
+  function startRecorder() {
+    const chunkMs = Number(chunkMsEl.value);
+    const mime = bestMimeType();
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+
+    let lastChunkT = nowPerf();
+
+    recorder.ondataavailable = (ev) => {
+      if (!ev.data || ev.data.size === 0) return;
+
+      const t = nowPerf();
+      const durMs = Math.max(1, Math.round(t - lastChunkT));
+      lastChunkT = t;
+
+      pushChunk(ev.data, durMs);
+
+      if (state === "RECORD_EVENT" && eventChunks) {
+        eventChunks.push(ev.data);
+      }
+    };
+
+    recorder.onstop = () => { recorder = null; };
+    recorder.start(chunkMs);
+  }
+
+  // Media lifecycle
+  async function startArmed() {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+
+    preview.srcObject = stream;
+    await preview.play();
+
+    const audioOnly = new MediaStream(stream.getAudioTracks());
+    setupAudioDetection(audioOnly);
+
+    ring = [];
+    ringDurMs = 0;
+    updateBufInfo();
+
+    startRecorder();
+    setMode("ARMED");
+  }
+
+  function stopMediaPipelines() {
+    clearTimeout(postTimer); postTimer = null;
+
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    recorder = null;
+
+    if (audioCtx) { try { audioCtx.close(); } catch {} }
+    audioCtx = null; analyser = null; audioData = null;
+
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    preview.srcObject = null;
+
+    ring = []; ringDurMs = 0; updateBufInfo();
+    eventChunks = null;
+  }
+
+  function goStandby() {
+    if (state === "RECORD_EVENT") return;
+    stopMediaPipelines();
+    setMode("STANDBY");
+  }
+
+  async function resumeFromStandby() {
+    if (state !== "STANDBY") return;
+    await startArmed();
+  }
+
+  // Orientation helpers (calibrated)
+  function effectiveBeta(betaRaw) {
+    if (betaRaw == null || Number.isNaN(betaRaw)) return null;
+    const b = invertPitchEl.checked ? -betaRaw : betaRaw;
+    return b;
+  }
+
+  function deltaBeta() {
+    const b = effectiveBeta(lastBetaRaw);
+    if (b == null) return null;
+    // If not calibrated, refBeta = 0 and hasCal false; still works but less robust
+    return b - (hasCal ? refBeta : 0);
+  }
+
+  function isMuzzleDown() {
+    const d = deltaBeta();
+    if (d == null) return false;
+    return d >= Number(downDegEl.value);
+  }
+
+  function isMuzzleUp() {
+    const d = deltaBeta();
+    if (d == null) return false;
+    // "Up" means delta back near 0: <= upDeg
+    return d <= Number(upDegEl.value);
+  }
+
+  // Orientation permission (iOS)
+  async function requestOrientationPermissionIfNeeded() {
+    try {
+      if (typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function") {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if (res !== "granted") console.warn("Orientation permission not granted.");
+      }
+    } catch (e) {
+      console.warn("Orientation permission request failed:", e);
+    }
+  }
+
+  function onOrientation(ev) {
+    lastBetaRaw = ev.beta;
+    const bEff = effectiveBeta(lastBetaRaw);
+    const d = deltaBeta();
+
+    betaEl.textContent = (bEff == null) ? "–" : bEff.toFixed(1);
+    refEl.textContent = (hasCal ? refBeta : 0).toFixed(1);
+    deltaEl.textContent = (d == null) ? "–" : d.toFixed(1);
+
+    if (!enableStandbyEl.checked) {
+      downStart = null; upStart = null; timerEl.textContent = "0";
+      return;
+    }
+
+    const t = nowPerf();
+
+    if (state === "ARMED") {
+      if (isMuzzleDown()) {
+        if (downStart == null) downStart = t;
+        const dt = t - downStart;
+        timerEl.textContent = Math.round(dt);
+        if (dt >= Number(downMsEl.value)) {
+          goStandby();
+          downStart = null; upStart = null; timerEl.textContent = "0";
+        }
+      } else {
+        downStart = null; timerEl.textContent = "0";
+      }
+    } else if (state === "STANDBY") {
+      if (isMuzzleUp()) {
+        if (upStart == null) upStart = t;
+        const dt = t - upStart;
+        timerEl.textContent = Math.round(dt);
+        if (dt >= Number(upMsEl.value)) {
+          upStart = null; timerEl.textContent = "0";
+          resumeFromStandby().catch(err => alert(err.message));
+        }
+      } else {
+        upStart = null; timerEl.textContent = "0";
+      }
+    } else if (state === "RECORD_EVENT") {
+      downStart = null; upStart = null; timerEl.textContent = "0";
+    }
+  }
+
+  window.addEventListener("deviceorientation", onOrientation, { passive: true });
+
+  // Buttons
+  btnStart.addEventListener("click", async () => {
+    await requestOrientationPermissionIfNeeded();
+    await requestWakeLock();
+    await startArmed();
+  });
+
+  btnStop.addEventListener("click", () => {
+    stopMediaPipelines();
+    setMode("IDLE");
+    releaseWakeLock();
+  });
+
+  btnTest.addEventListener("click", () => { if (state === "ARMED") triggerEvent("manual"); });
+
+  btnCal.addEventListener("click", () => {
+    const b = effectiveBeta(lastBetaRaw);
+    if (b == null) { alert("Geen orientation data. Beweeg de telefoon even of sta device orientation toe."); return; }
+    refBeta = b;
+    hasCal = true;
+    refEl.textContent = refBeta.toFixed(1);
+  });
+
+  btnCalReset.addEventListener("click", () => {
+    refBeta = 0;
+    hasCal = false;
+    refEl.textContent = "0.0";
+  });
+
+  // Init
+  setMode("IDLE");
+  updateBufInfo();
+  wlEl.textContent = ("wakeLock" in navigator) ? "WakeLock: OFF" : "WakeLock: N/A";
+})();
+</script>
+</body>
+</html>
