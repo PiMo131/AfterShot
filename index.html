@@ -3,7 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>ShotCam Web Prototype</title>
+  <title>AfterShot Web Prototype</title>
+
+  <!-- ffmpeg.wasm (no build tools; works on GitHub Pages) -->
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js"></script>
+
   <style>
     :root{
       --bg: #0b0f14;
@@ -26,17 +30,8 @@
     body { overflow: hidden; }
 
     /* Fullscreen video */
-    #videoWrap {
-      position: fixed;
-      inset: 0;
-      background: #000;
-    }
-    #preview {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: #000;
-    }
+    #videoWrap { position: fixed; inset: 0; background: #000; }
+    #preview { width: 100%; height: 100%; object-fit: cover; background: #000; }
 
     /* Top bar */
     .topbar {
@@ -49,7 +44,7 @@
       align-items: center;
       justify-content: space-between;
       pointer-events: none;
-      z-index: 40; /* ensure above video */
+      z-index: 40;
     }
     .chipRow { display:flex; gap:8px; flex-wrap: wrap; align-items:center; pointer-events: auto; }
     .chip {
@@ -90,11 +85,10 @@
 
     /* MENU PANEL: fixed + high z-index so it never goes behind bottom buttons */
     .menuPanel {
-      position: fixed; /* changed from absolute */
+      position: fixed;
       top: calc(env(safe-area-inset-top) + 56px);
       right: 12px;
       width: min(420px, calc(100vw - 24px));
-      /* leave space for bottom overlay controls: safe area + ~110px */
       max-height: calc(100vh - (env(safe-area-inset-top) + 56px) - (env(safe-area-inset-bottom) + 120px));
       overflow: auto;
       background: var(--panel2);
@@ -104,7 +98,7 @@
       backdrop-filter: blur(10px);
       padding: 10px;
       display: none;
-      z-index: 80; /* above everything including bottom bar */
+      z-index: 80;
     }
     .menuPanel.open { display: block; }
 
@@ -125,9 +119,9 @@
       display:flex;
       align-items:center;
       justify-content:center;
-      gap:8px;
       user-select:none;
       -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
     }
     .stepTab.active{
       background: rgba(255,255,255,0.14);
@@ -145,10 +139,7 @@
     }
     .field { margin: 10px 0; }
     label { display:block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-    input[type="number"], input[type="range"]{
-      width: 100%;
-      accent-color: var(--accent);
-    }
+    input[type="number"], input[type="range"]{ width: 100%; accent-color: var(--accent); }
     input[type="number"]{
       background: rgba(255,255,255,0.06);
       color: var(--text);
@@ -161,18 +152,53 @@
     .toggle { display:flex; align-items:center; gap:10px; margin-top: 8px; color: var(--muted); font-size: 12px; }
     .toggle input { transform: scale(1.15); }
 
-    .downloads a{
-      display:block;
-      padding: 10px 10px;
-      border-radius: 12px;
+    .downloads .item{
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.05);
-      color: var(--text);
-      text-decoration: none;
-      margin: 8px 0;
-      overflow: hidden;
+      border-radius: 12px;
+      padding: 10px;
+      margin: 10px 0;
+    }
+    .downloads .title{
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      overflow:hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .downloads .row{
+      display:flex;
+      gap:8px;
+      flex-wrap: wrap;
+      align-items:center;
+    }
+    .downloads a{
+      display:inline-block;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .downloads .status{
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.35;
+    }
+    .pill{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--text);
     }
 
     /* Bottom overlay controls */
@@ -183,7 +209,7 @@
       bottom: env(safe-area-inset-bottom);
       padding: 12px;
       pointer-events: none;
-      z-index: 20; /* explicitly below menu */
+      z-index: 20;
     }
     .controls {
       pointer-events: auto;
@@ -212,12 +238,13 @@
       gap: 10px;
       user-select: none;
       -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
     }
     .btn.primary { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.25); }
     .btn.danger { background: rgba(255,77,77,0.18); border-color: rgba(255,77,77,0.28); }
     .btn:active { transform: translateY(1px); }
 
-    /* Small helper text overlay (optional) */
+    /* Helper text overlay */
     .hint {
       position: fixed;
       left: env(safe-area-inset-left);
@@ -231,7 +258,7 @@
     }
     .hint .chip { max-width: 92vw; }
 
-    /* Landscape hint if not landscape */
+    /* Landscape hint */
     .rotateOverlay{
       position: fixed;
       inset: 0;
@@ -254,6 +281,7 @@
     }
     .rotateOverlay h3{ margin: 0 0 6px; }
     .rotateOverlay p{ margin: 0; color: var(--muted); }
+
   </style>
 </head>
 <body>
@@ -268,21 +296,20 @@
       <div class="chip">Buffer <span id="bufInfo" class="mono">0</span></div>
       <div class="chip">Δ <span id="delta" class="mono">–</span>°</div>
       <div class="chip">Wake <span id="wake" class="mono">OFF</span></div>
+      <div class="chip">MP4 <span id="mp4Status" class="mono">idle</span></div>
     </div>
 
     <div class="menu">
       <button class="menuBtn" id="menuBtn">Menu ▾</button>
 
-      <!-- 3-step menu -->
       <div class="menuPanel" id="menuPanel">
-
         <div class="stepTabs">
           <div class="stepTab active" id="tabVideo">Video</div>
           <div class="stepTab" id="tabDetect">Detection</div>
           <div class="stepTab" id="tabDownloads">Downloads</div>
         </div>
 
-        <!-- PAGE 1: VIDEO SETTINGS -->
+        <!-- PAGE 1 -->
         <div class="stepPage active" id="pageVideo">
           <div class="sectionTitle">Video settings</div>
 
@@ -347,9 +374,18 @@
             <input id="autoLandscape" type="checkbox" checked />
             <span>Try lock landscape (fullscreen only)</span>
           </div>
+
+          <div class="sectionTitle">MP4 conversion</div>
+          <div class="toggle">
+            <input id="enableMp4" type="checkbox" checked />
+            <span>Also convert every clip to MP4 (CPU heavy)</span>
+          </div>
+          <div style="color: var(--muted); font-size: 12px; line-height: 1.35; margin-top: 6px;">
+            MP4 conversion runs locally in your browser using ffmpeg.wasm. On older phones it may be slow or fail.
+          </div>
         </div>
 
-        <!-- PAGE 2: SHOT DETECTION -->
+        <!-- PAGE 2 -->
         <div class="stepPage" id="pageDetect">
           <div class="sectionTitle">Shot detection (audio)</div>
 
@@ -379,15 +415,11 @@
           </div>
         </div>
 
-        <!-- PAGE 3: DOWNLOADS -->
+        <!-- PAGE 3 -->
         <div class="stepPage" id="pageDownloads">
           <div class="sectionTitle">Downloads</div>
           <div class="downloads" id="downloads"></div>
-          <div style="color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 6px;">
-            Clips are saved as <b>.webm</b>.
-          </div>
         </div>
-
       </div>
     </div>
   </div>
@@ -423,13 +455,14 @@
   const bufInfoEl = $("bufInfo");
   const deltaEl = $("delta");
   const wakeEl = $("wake");
-  const downloadsEl = $("downloads");
+  const mp4StatusEl = $("mp4Status");
+  const downloadsRoot = $("downloads");
   const rotateOverlay = $("rotateOverlay");
 
   const menuBtn = $("menuBtn");
   const menuPanel = $("menuPanel");
 
-  // 3-step tabs/pages
+  // 3-step menu
   const tabVideo = $("tabVideo");
   const tabDetect = $("tabDetect");
   const tabDownloads = $("tabDownloads");
@@ -478,6 +511,8 @@
   const autoFullscreenEl = $("autoFullscreen");
   const autoLandscapeEl = $("autoLandscape");
 
+  const enableMp4El = $("enableMp4");
+
   // State
   let stream = null;
   let recorder = null;
@@ -521,15 +556,6 @@
   function updateBufInfo() {
     const preMs = Number(preSecEl.value) * 1000;
     bufInfoEl.textContent = `${ring.length} / ~${(ringDurMs/1000).toFixed(1)}s (target ${(preMs/1000).toFixed(1)}s)`;
-  }
-
-  function appendDownload(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.textContent = filename;
-    downloadsEl.prepend(a);
   }
 
   function bestMimeType() {
@@ -614,9 +640,7 @@
     updateBufInfo();
   }
 
-  function snapshotPreRoll() {
-    return ring.map(x => x.blob);
-  }
+  function snapshotPreRoll() { return ring.map(x => x.blob); }
 
   // ---------- audio detection ----------
   function setupAudioDetection(audioOnlyStream) {
@@ -668,6 +692,120 @@
     loop();
   }
 
+  // ---------- downloads UI helpers ----------
+  function createDownloadItem(baseName) {
+    const el = document.createElement("div");
+    el.className = "item";
+
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = baseName;
+
+    const row = document.createElement("div");
+    row.className = "row";
+
+    const status = document.createElement("div");
+    status.className = "status";
+    status.textContent = "Saved WebM. MP4 conversion pending…";
+
+    el.appendChild(title);
+    el.appendChild(row);
+    el.appendChild(status);
+    downloadsRoot.prepend(el);
+
+    return { el, row, status };
+  }
+
+  function addLink(row, blob, filename, label) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.textContent = label;
+    row.appendChild(a);
+    return a;
+  }
+
+  // ---------- MP4 conversion with ffmpeg.wasm ----------
+  let ffmpegInstance = null;
+  let ffmpegLoading = false;
+
+  async function ensureFfmpegLoaded() {
+    if (ffmpegInstance) return ffmpegInstance;
+    if (ffmpegLoading) {
+      // wait until it finishes
+      while (ffmpegLoading) await new Promise(r => setTimeout(r, 150));
+      if (ffmpegInstance) return ffmpegInstance;
+    }
+
+    ffmpegLoading = true;
+    mp4StatusEl.textContent = "loading";
+
+    try {
+      const { createFFmpeg, fetchFile } = FFmpeg;
+      const ffmpeg = createFFmpeg({
+        log: false,
+        // corePath is important on static hosting
+        corePath: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js"
+      });
+
+      ffmpeg.setProgress(({ ratio }) => {
+        // ratio 0..1
+        const pct = Math.min(99, Math.max(0, Math.round((ratio || 0) * 100)));
+        mp4StatusEl.textContent = `mp4 ${pct}%`;
+      });
+
+      await ffmpeg.load();
+      ffmpegInstance = { ffmpeg, fetchFile };
+      mp4StatusEl.textContent = "ready";
+      return ffmpegInstance;
+    } catch (e) {
+      console.warn("FFmpeg load failed:", e);
+      mp4StatusEl.textContent = "fail";
+      throw e;
+    } finally {
+      ffmpegLoading = false;
+    }
+  }
+
+  async function webmToMp4(webmBlob) {
+    const { ffmpeg, fetchFile } = await ensureFfmpegLoaded();
+
+    // Use unique names to avoid collisions
+    const inName = `in_${Date.now()}_${Math.random().toString(16).slice(2)}.webm`;
+    const outName = `out_${Date.now()}_${Math.random().toString(16).slice(2)}.mp4`;
+
+    ffmpeg.FS("writeFile", inName, await fetchFile(webmBlob));
+
+    // Try H.264 + AAC first (best compatibility). If not available, fallback to MPEG-4 Part 2.
+    const attempts = [
+      ["-i", inName, "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "128k", outName],
+      ["-i", inName, "-c:v", "mpeg4", "-q:v", "6", "-c:a", "aac", "-b:a", "128k", outName],
+      ["-i", inName, "-c:v", "mpeg4", "-q:v", "6", "-c:a", "mp3", "-b:a", "128k", outName]
+    ];
+
+    let lastErr = null;
+    for (const args of attempts) {
+      try {
+        mp4StatusEl.textContent = "mp4 0%";
+        await ffmpeg.run(...args);
+        const data = ffmpeg.FS("readFile", outName);
+        // cleanup
+        try { ffmpeg.FS("unlink", inName); } catch {}
+        try { ffmpeg.FS("unlink", outName); } catch {}
+        mp4StatusEl.textContent = "done";
+        return new Blob([data.buffer], { type: "video/mp4" });
+      } catch (e) {
+        lastErr = e;
+        // cleanup between attempts
+        try { ffmpeg.FS("unlink", outName); } catch {}
+      }
+    }
+
+    mp4StatusEl.textContent = "fail";
+    throw lastErr || new Error("MP4 conversion failed");
+  }
+
   // ---------- event capture ----------
   function triggerEvent(reason) {
     lastTriggerTs = nowPerf();
@@ -680,17 +818,37 @@
     postTimer = setTimeout(() => finalizeEvent(reason), Number(postSecEl.value) * 1000);
   }
 
-  function finalizeEvent(reason) {
+  async function finalizeEvent(reason) {
     if (!eventChunks) return;
 
-    const out = new Blob(eventChunks, { type: recorder?.mimeType || "video/webm" });
+    const webmBlob = new Blob(eventChunks, { type: recorder?.mimeType || "video/webm" });
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `shotcam_${ts}_${reason}_pre${preSecEl.value}s_post${postSecEl.value}s.webm`;
-    appendDownload(out, filename);
+    const base = `aftershot_${ts}_${reason}_pre${preSecEl.value}s_post${postSecEl.value}s`;
+    const webmName = `${base}.webm`;
+    const mp4Name  = `${base}.mp4`;
 
-    // Optional UX: jump to Downloads tab when a clip is created
+    // Create downloads UI entry
+    const item = createDownloadItem(base);
+    addLink(item.row, webmBlob, webmName, "Download WebM");
+
+    // Jump to Downloads and open menu
     setMenuStep("downloads");
     toggleMenu(true);
+
+    // Start MP4 conversion (optional toggle)
+    if (enableMp4El.checked) {
+      item.status.textContent = "Converting to MP4… (this can take a while)";
+      try {
+        const mp4Blob = await webmToMp4(webmBlob);
+        addLink(item.row, mp4Blob, mp4Name, "Download MP4");
+        item.status.textContent = "MP4 ready.";
+      } catch (e) {
+        console.warn("MP4 conversion failed:", e);
+        item.status.textContent = "MP4 conversion failed on this device/browser. WebM is still available.";
+      }
+    } else {
+      item.status.textContent = "MP4 conversion disabled. WebM ready.";
+    }
 
     eventChunks = null;
 
@@ -718,7 +876,6 @@
     };
 
     recorder.onstop = () => { recorder = null; };
-
     recorder.start(chunkMs);
   }
 
@@ -848,6 +1005,12 @@
     await startArmed();
   }
 
+  // ---------- menu ----------
+  function toggleMenu(force) {
+    const open = (force !== undefined) ? force : !menuPanel.classList.contains("open");
+    menuPanel.classList.toggle("open", open);
+  }
+
   // ---------- buttons ----------
   btnStart.addEventListener("click", async () => {
     await requestOrientationPermissionIfNeeded();
@@ -886,9 +1049,16 @@
 
   // ---------- init ----------
   wakeEl.textContent = ("wakeLock" in navigator) ? "OFF" : "N/A";
+  mp4StatusEl.textContent = "idle";
   setMode("IDLE");
   updateBufInfo();
   updateRotateOverlay();
+
+  // close menu when tapping outside
+  menuBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });
+  document.addEventListener("click", () => toggleMenu(false));
+  menuPanel.addEventListener("click", (e) => e.stopPropagation());
+
 })();
 </script>
 </body>
