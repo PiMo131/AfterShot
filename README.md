@@ -10,7 +10,11 @@ Instead of recording everything, it keeps only the most relevant moment: **befor
 
 ## User Manual (Quick Start)
 
-This section is written for **regular users**, not programmers.
+The phone must be mounted on the rifle with this kind of mounting:
+<img width="345" height="326" alt="image" src="https://github.com/user-attachments/assets/4cbd47b2-d40b-4748-b04b-3d2b43cd02fd" />
+
+
+
 
 ### What you need
 - A smartphone (recommended: **Android + Chrome**)
@@ -31,6 +35,8 @@ For best results:
 - Rotate your phone to **landscape mode**
 
 ---
+
+<img width="1893" height="838" alt="image" src="https://github.com/user-attachments/assets/1e3252f4-571f-45c8-8919-f19b15695373" />
 
 #### 2. Start the app
 Tap **Start** at the bottom of the screen.
